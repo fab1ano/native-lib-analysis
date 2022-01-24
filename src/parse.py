@@ -57,10 +57,21 @@ def extract_libs(path):
     return result
 
 
-def gather_data(path):
+def copy_libs(path, target_dir):
+    """Copies the library folder to the library directory."""
+    # Create target dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy the libraries
+    shutil.copytree(path / "lib", target_dir, dirs_exist_ok=True)
+
+
+def gather_data(path, lib_dir):
     data = {}
     data["package"] = extract_package_name(path)
     data["libs"] = extract_libs(path)
+    if data["libs"]:
+        copy_libs(path, lib_dir / data["package"])
     return data
 
 
@@ -69,7 +80,7 @@ def decode_apk(apk_path, path_decoded):
     subprocess.check_output(apktool_cmd, stderr=subprocess.STDOUT)
 
 
-def parse_apk(apk_path, out_path, rel_apk_path=None):
+def parse_apk(apk_path, out_path, lib_dir, rel_apk_path=None):
     """Extracts data from an apk and writes it as json to a file.
 
     This process requires two steps:
@@ -92,7 +103,7 @@ def parse_apk(apk_path, out_path, rel_apk_path=None):
     # 1. Try apktool
     decode_apk(apk_path, tmp_path_decoded)
     try:
-        data = gather_data(tmp_path_decoded)
+        data = gather_data(tmp_path_decoded, lib_dir)
     except ValueError as e:
         failed = True
 
@@ -107,7 +118,7 @@ def parse_apk(apk_path, out_path, rel_apk_path=None):
         assert len(apk_paths)==1, "Unable to find exactly one apk in this '.xapk'!"
 
         decode_apk(apk_paths[0], tmp_path_decoded)
-        data = gather_data(tmp_path_decoded)
+        data = gather_data(tmp_path_decoded, lib_dir)
 
     # Add filename and size
     data["filename"] = str(rel_apk_path if rel_apk_path else apk_path)
@@ -136,14 +147,15 @@ def parse_folder(target, out_folder):
         rel_apk_path = apk_path.relative_to(apk_folder)
         logging.info(f"Processing {rel_apk_path}")
 
-        out_path = out_folder / rel_apk_path.with_suffix(".json")
+        out_path = Path(out_folder) / rel_apk_path.with_suffix(".json")
+        lib_dir = Path(out_folder) / "libs"
 
         if out_path.is_file():
             logging.info("Skipping this apk since the json file already exists")
             continue
 
         try:
-            parse_apk(apk_path, out_path, rel_apk_path=rel_apk_path)
+            parse_apk(apk_path, out_path, lib_dir, rel_apk_path=rel_apk_path)
         except Exception as e:
             logging.error(f"Failed parsing {rel_apk_path}")
             print(e)
